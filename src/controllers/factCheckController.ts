@@ -1,0 +1,143 @@
+import { Request, Response } from "express";
+import { db } from "../db/index";
+import { eq, desc } from "drizzle-orm";
+import { chat, rumour, messageLog } from "../drizzle/schema";
+
+export const factCheck = async (req: Request, res: Response) => {
+  try {
+    console.log("\n🔥 Incoming Fact Check Request ------------------------------");
+    console.log("Req Body:", req.body);
+
+    const { message, groupId, userId, chat_name } = req.body;
+
+    if (!message) {
+      console.log("❌ Missing message content");
+      return res.status(400).json({ error: "Message is required" });
+    }
+
+    // Detect if message came from group or DM
+    const chat_id = groupId ?? userId;
+    console.log("🆔 Computed chat_id =", chat_id);
+
+    if (!chat_id) {
+      console.log("❌ No valid chat ID provided");
+      return res.status(400).json({ error: "chat_id or groupId/userId is required" });
+    }
+
+    // ============================================================
+    // 1️⃣ UPSERT CHAT
+    // ============================================================
+
+    console.log(`🔍 Checking chat existence for chat_id = ${chat_id} ...`);
+
+    let chatRow = await db.query.chat.findFirst({
+      where: eq(chat.chatId, String(chat_id)),
+    });
+
+    if (chatRow) {
+      console.log("✔ Chat exists:", chatRow);
+
+      chatRow = await db
+        .update(chat)
+        .set({ chatName: chat_name })
+        .where(eq(chat.chatId, String(chat_id)))
+        .returning()
+        .then((r) => r[0]);
+
+      console.log("🔄 Updated Chat Row:", chatRow);
+    } else {
+      console.log("➕ Chat does not exist, inserting new chat...");
+
+      chatRow = await db
+        .insert(chat)
+        .values({
+          chatId: String(chat_id),
+          chatName: chat_name ?? null,
+        })
+        .returning()
+        .then((r) => r[0]);
+
+      console.log("✨ New Chat Created:", chatRow);
+    }
+
+    // ============================================================
+    // 2️⃣ CHECK EXISTING RUMOUR
+    // ============================================================
+
+    console.log("🔍 Searching for existing rumour in DB...");
+
+    const existingRumour = await db.query.rumour.findFirst({
+      where: eq(rumour.msgContent, message),
+      with: {
+        rumourMatches: true,
+      },
+    });
+
+    if (existingRumour) {
+      console.log("⚠ Rumour already exists:", existingRumour.id);
+
+      const lastMsg = await db.query.messageLog.findFirst({
+        where: eq(messageLog.chatTableId, chatRow.id),
+        orderBy: (ml) => desc(ml.createdat),
+      });
+
+      console.log("📦 Previous AI response:", lastMsg?.aiResponse);
+
+      return res.json({
+        success: true,
+        reused: true,
+        reply: lastMsg?.aiResponse ?? "Found previous rumour but no stored reply.",
+      });
+    }
+
+    // ============================================================
+    // 3️⃣ NEW RUMOUR PROCESSING
+    // ============================================================
+
+    console.log("🆕 New rumour detected — generating AI response...");
+
+    const ai_response =
+      "This is Krishna from backend — new rumour detected, processing...";
+
+    // Store rumour
+    console.log("📝 Storing new rumour...");
+
+    const newRumour = await db
+      .insert(rumour)
+      .values({
+        chatTableId: chatRow.id,
+        msgContent: message,
+        status: "processed",
+        embedding: null,
+      })
+      .returning()
+      .then((r) => r[0]);
+
+    console.log("✨ New Rumour Inserted:", newRumour);
+
+    // Store AI response
+    console.log("📝 Storing AI response in messageLog...");
+
+    await db.insert(messageLog).values({
+      chatTableId: chatRow.id,
+      content: message,
+      aiResponse: ai_response,
+      processed: true,
+    });
+
+    console.log("📦 MessageLog entry created");
+
+    console.log("✅ Returning AI response to client");
+
+    return res.json({
+      success: true,
+      reused: false,
+      reply: ai_response,
+      rumourId: newRumour.id,
+    });
+
+  } catch (error) {
+    console.error("❌ FactCheck Error:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};

@@ -1,0 +1,9 @@
+### Health check
+GET http://localhost:4000/health
+
+### Test supabase
+GET http://localhost:4000/api/users/profile
+
+### 2. Test Protected Route (With Fake Token)
+GET http://localhost:4000/api/users/profile
+Authorization: Bearer iam-a-fake-token
