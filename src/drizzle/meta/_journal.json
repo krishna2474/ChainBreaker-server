@@ -15,6 +15,13 @@
       "when": 1764372749073,
       "tag": "0001_next_nico_minoru",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1764397700404,
+      "tag": "0002_damp_queen_noir",
+      "breakpoints": true
     }
   ]
 }

@@ -7,7 +7,7 @@ const botToken = process.env.TELEGRAM_BOT_TOKEN!;
 const botUsername = process.env.BOT_USERNAME!.toLowerCase(); // example: "chainbreakbot"
 const backendUrl = process.env.BACKEND_URL!;
 
-const bot = new TelegramBot(botToken, { polling: true });
+export const bot = new TelegramBot(botToken, { polling: true });
 
 console.log("🚀 Telegram bot is running...");
 
