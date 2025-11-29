@@ -1,7 +1,8 @@
 import { Request, Response } from "express";
 import { db } from "../db/index";
 import { eq, desc } from "drizzle-orm";
-import { chat, rumour, messageLog } from "../drizzle/schema";
+import { appChat, appRumour, appMessageLog } from "../drizzle/schema";
+import aiAgent from "../lib/aiAgent";    // 👈 AI Agent here
 
 export const factCheck = async (req: Request, res: Response) => {
   try {
@@ -15,12 +16,11 @@ export const factCheck = async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Message is required" });
     }
 
-    // Detect if message came from group or DM
+    // Detect DM or Group
     const chat_id = groupId ?? userId;
     console.log("🆔 Computed chat_id =", chat_id);
 
     if (!chat_id) {
-      console.log("❌ No valid chat ID provided");
       return res.status(400).json({ error: "chat_id or groupId/userId is required" });
     }
 
@@ -30,17 +30,17 @@ export const factCheck = async (req: Request, res: Response) => {
 
     console.log(`🔍 Checking chat existence for chat_id = ${chat_id} ...`);
 
-    let chatRow = await db.query.chat.findFirst({
-      where: eq(chat.chatId, String(chat_id)),
+    let chatRow = await db.query.appChat.findFirst({
+      where: eq(appChat.chatId, String(chat_id)),
     });
 
     if (chatRow) {
       console.log("✔ Chat exists:", chatRow);
 
       chatRow = await db
-        .update(chat)
+        .update(appChat)
         .set({ chatName: chat_name })
-        .where(eq(chat.chatId, String(chat_id)))
+        .where(eq(appChat.chatId, String(chat_id)))
         .returning()
         .then((r) => r[0]);
 
@@ -49,7 +49,7 @@ export const factCheck = async (req: Request, res: Response) => {
       console.log("➕ Chat does not exist, inserting new chat...");
 
       chatRow = await db
-        .insert(chat)
+        .insert(appChat)
         .values({
           chatId: String(chat_id),
           chatName: chat_name ?? null,
@@ -66,19 +66,19 @@ export const factCheck = async (req: Request, res: Response) => {
 
     console.log("🔍 Searching for existing rumour in DB...");
 
-    const existingRumour = await db.query.rumour.findFirst({
-      where: eq(rumour.msgContent, message),
+    const existingRumour = await db.query.appRumour.findFirst({
+      where: eq(appRumour.msgContent, message),
       with: {
-        rumourMatches: true,
+        appRumourMatches: true,
       },
     });
 
     if (existingRumour) {
       console.log("⚠ Rumour already exists:", existingRumour.id);
 
-      const lastMsg = await db.query.messageLog.findFirst({
-        where: eq(messageLog.chatTableId, chatRow.id),
-        orderBy: (ml) => desc(ml.createdat),
+      const lastMsg = await db.query.appMessageLog.findFirst({
+        where: eq(appMessageLog.chatTableId, chatRow.id),
+        orderBy: (ml) => desc(ml.createdAt),
       });
 
       console.log("📦 Previous AI response:", lastMsg?.aiResponse);
@@ -91,23 +91,31 @@ export const factCheck = async (req: Request, res: Response) => {
     }
 
     // ============================================================
-    // 3️⃣ NEW RUMOUR PROCESSING
+    // 3️⃣ RUN AI FACT CHECKING
     // ============================================================
 
-    console.log("🆕 New rumour detected — generating AI response...");
+    console.log("🤖 Calling AI Agent...");
 
-    const ai_response =
-      "This is Krishna from backend — new rumour detected, processing...";
+    const verdict = await aiAgent.factCheckAgent(message);
+    const ai_response = aiAgent.formatVerdict(verdict);
 
-    // Store rumour
-    console.log("📝 Storing new rumour...");
+    console.log("🤖 AI Verdict:", verdict);
+    console.log("📝 Formatted:", ai_response);
+
+    // ============================================================
+    // 4️⃣ STORE NEW RUMOUR
+    // ============================================================
+
+    console.log("📝 Storing new rumour in DB...");
 
     const newRumour = await db
-      .insert(rumour)
+      .insert(appRumour)
       .values({
         chatTableId: chatRow.id,
         msgContent: message,
-        status: "processed",
+        status: verdict.conclusion,
+        factCheckResult: JSON.stringify(verdict),
+        factCheckSource: verdict.sources?.[0]?.url ?? null,
         embedding: null,
       })
       .returning()
@@ -115,10 +123,14 @@ export const factCheck = async (req: Request, res: Response) => {
 
     console.log("✨ New Rumour Inserted:", newRumour);
 
-    // Store AI response
+    // ============================================================
+    // 5️⃣ STORE MESSAGE LOG
+    // ============================================================
+
     console.log("📝 Storing AI response in messageLog...");
 
-    await db.insert(messageLog).values({
+    await db.insert(appMessageLog).values({
+      messageId: newRumour.id,
       chatTableId: chatRow.id,
       content: message,
       aiResponse: ai_response,
@@ -126,7 +138,6 @@ export const factCheck = async (req: Request, res: Response) => {
     });
 
     console.log("📦 MessageLog entry created");
-
     console.log("✅ Returning AI response to client");
 
     return res.json({
