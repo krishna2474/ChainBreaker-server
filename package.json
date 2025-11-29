@@ -12,6 +12,7 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.39.0",
     "axios": "^1.13.2",
     "cors": "^2.8.5",
@@ -19,9 +20,12 @@
     "drizzle-kit": "^0.31.7",
     "drizzle-orm": "^0.44.7",
     "express": "^4.18.2",
+    "groq": "^4.19.0",
+    "groq-sdk": "^0.37.0",
     "helmet": "^7.1.0",
     "morgan": "^1.10.0",
     "node-telegram-bot-api": "^0.66.0",
+    "openai": "^6.9.1",
     "pg": "^8.13.0",
     "postgres": "^3.4.7"
   },

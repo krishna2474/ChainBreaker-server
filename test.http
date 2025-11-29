@@ -5,5 +5,5 @@ GET http://localhost:4000/health
 GET http://localhost:4000/api/users/profile
 
 ### 2. Test Protected Route (With Fake Token)
-GET http://localhost:4000/api/users/profile
+GET http://localhost:4000/api/dashboard
 Authorization: Bearer iam-a-fake-token
